@@ -1,0 +1,166 @@
+pip install click
+import click
+import sqlite3
+from datetime import datetime
+
+# Initialize the database
+def init_db():
+    conn = sqlite3.connect('todo.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS tasks
+                 (id INTEGER PRIMARY KEY, task TEXT, due_date TEXT, priority INTEGER, completed BOOLEAN)''')
+    conn.commit()
+    conn.close()
+
+@click.group()
+def cli():
+    pass
+
+@cli.command()
+@click.argument('task')
+@click.option('--due', help='Due date for the task (YYYY-MM-DD)')
+@click.option('--priority', default=1, help='Priority level of the task')
+def add(task, due, priority):
+    """Add a new task to the list"""
+    conn = sqlite3.connect('todo.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO tasks (task, due_date, priority, completed) VALUES (?, ?, ?, ?)",
+              (task, due, priority, False))
+    conn.commit()
+    conn.close()
+    click.echo(f'Task "{task}" added.')
+
+@cli.command()
+@click.argument('task_id', type=int)
+@click.option('--task', help='Updated task description')
+@click.option('--due', help='Updated due date (YYYY-MM-DD)')
+@click.option('--priority', type=int, help='Updated priority level')
+@click.option('--completed', type=bool, help='Mark as completed')
+def update(task_id, task, due, priority, completed):
+    """Update an existing task"""
+    conn = sqlite3.connect('todo.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM tasks WHERE id=?", (task_id,))
+    task_data = c.fetchone()
+    if not task_data:
+        click.echo(f'Task with ID {task_id} not found.')
+        return
+    
+    task = task if task else task_data[1]
+    due = due if due else task_data[2]
+    priority = priority if priority else task_data[3]
+    completed = completed if completed is not None else task_data[4]
+    
+    c.execute("UPDATE tasks SET task=?, due_date=?, priority=?, completed=? WHERE id=?",
+              (task, due, priority, completed, task_id))
+    conn.commit()
+    conn.close()
+    click.echo(f'Task with ID {task_id} updated.')
+
+@cli.command()
+@click.argument('task_id', type=int)
+def delete(task_id):
+    """Delete a task from the list"""
+    conn = sqlite3.connect('todo.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    conn.commit()
+    conn.close()
+    click.echo(f'Task with ID {task_id} deleted.')
+
+@cli.command()
+def list():
+    """List all tasks"""
+    conn = sqlite3.connect('todo.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM tasks")
+    tasks = c.fetchall()
+    conn.close()
+    for task in tasks:
+        status = "Completed" if task[4] else "Pending"
+        click.echo(f'ID: {task[0]} | Task: {task[1]} | Due: {task[2]} | Priority: {task[3]} | Status: {status}')
+
+if __name__ == '__main__':
+    init_db()
+    cli()
+import tkinter as tk
+from tkinter import messagebox
+import sqlite3
+
+class TodoApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("To-Do List")
+
+        self.conn = sqlite3.connect('todo.db')
+        self.c = self.conn.cursor()
+
+        self.frame = tk.Frame(root)
+        self.frame.pack(pady=10)
+
+        self.task_entry = tk.Entry(self.frame, width=40)
+        self.task_entry.grid(row=0, column=0, padx=10)
+
+        self.add_button = tk.Button(self.frame, text="Add Task", command=self.add_task)
+        self.add_button.grid(row=0, column=1)
+
+        self.tasks_listbox = tk.Listbox(self.frame, width=50, height=10)
+        self.tasks_listbox.grid(row=1, column=0, columnspan=2, pady=10)
+
+        self.update_button = tk.Button(self.frame, text="Update Task", command=self.update_task)
+        self.update_button.grid(row=2, column=0, pady=10)
+
+        self.delete_button = tk.Button(self.frame, text="Delete Task", command=self.delete_task)
+        self.delete_button.grid(row=2, column=1)
+
+        self.refresh_tasks()
+
+    def add_task(self):
+        task = self.task_entry.get()
+        if task:
+            self.c.execute("INSERT INTO tasks (task, completed) VALUES (?, ?)", (task, False))
+            self.conn.commit()
+            self.task_entry.delete(0, tk.END)
+            self.refresh_tasks()
+        else:
+            messagebox.showwarning("Warning", "You must enter a task.")
+
+    def update_task(self):
+        selected_task = self.tasks_listbox.curselection()
+        if selected_task:
+            task_id = self.tasks_listbox.get(selected_task).split(" | ")[0].split(": ")[1]
+            new_task = self.task_entry.get()
+            if new_task:
+                self.c.execute("UPDATE tasks SET task=? WHERE id=?", (new_task, task_id))
+                self.conn.commit()
+                self.task_entry.delete(0, tk.END)
+                self.refresh_tasks()
+            else:
+                messagebox.showwarning("Warning", "You must enter a task.")
+        else:
+            messagebox.showwarning("Warning", "You must select a task to update.")
+
+    def delete_task(self):
+        selected_task = self.tasks_listbox.curselection()
+        if selected_task:
+            task_id = self.tasks_listbox.get(selected_task).split(" | ")[0].split(": ")[1]
+            self.c.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+            self.conn.commit()
+            self.refresh_tasks()
+        else:
+            messagebox.showwarning("Warning", "You must select a task to delete.")
+
+    def refresh_tasks(self):
+        self.tasks_listbox.delete(0, tk.END)
+        self.c.execute("SELECT * FROM tasks")
+        tasks = self.c.fetchall()
+        for task in tasks:
+            status = "Completed" if task[4] else "Pending"
+            self.tasks_listbox.insert(tk.END, f"ID: {task[0]} | Task: {task[1]} | Status: {status}")
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = TodoApp(root)
+    root.mainloop()
+python todo_cli.py
+python todo_gui.py
